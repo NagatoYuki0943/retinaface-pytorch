@@ -1,6 +1,5 @@
 import math
 from functools import partial
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,15 +8,15 @@ import torch.nn.functional as F
 #   获得框的左上角和右下角
 #------------------------------#
 def point_form(boxes):
-    return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,
-                     boxes[:, :2] + boxes[:, 2:]/2), 1)
+    return torch.cat((boxes[:, :2] - boxes[:, 2:]/2,        # xmin, ymin
+                      boxes[:, :2] + boxes[:, 2:]/2), 1)    # xmax, ymax
 
 #------------------------------#
 #   获得框的中心和宽高
 #------------------------------#
 def center_size(boxes):
-    return torch.cat((boxes[:, 2:] + boxes[:, :2])/2,
-                     boxes[:, 2:] - boxes[:, :2], 1)
+    return torch.cat((boxes[:, 2:] + boxes[:, :2])/2,  # cx, cy
+    				  boxes[:, 2:] - boxes[:, :2], 1)  # w, h
 
 #----------------------------------#
 #   计算所有真实框和先验框的交面积
@@ -66,7 +65,6 @@ def encode(matched, priors, variances):
     g_cxcy = (matched[:, :2] + matched[:, 2:])/2 - priors[:, :2]
     # 中心编码
     g_cxcy /= (variances[0] * priors[:, 2:])
-    
     # 宽高编码
     g_wh = (matched[:, 2:] - matched[:, :2]) / priors[:, 2:]
     g_wh = torch.log(g_wh) / variances[1]
@@ -127,15 +125,15 @@ def match(threshold, truths, priors, variances, labels, landms, loc_t, conf_t, l
     #----------------------------------------------#
     #   获取每一个先验框对应的真实框[num_priors,4]
     #----------------------------------------------#
-    matches = truths[best_truth_idx]            
+    matches = truths[best_truth_idx]
     # Shape: [num_priors] 此处为每一个anchor对应的label取出来
-    conf = labels[best_truth_idx]        
+    conf = labels[best_truth_idx]
     matches_landm = landms[best_truth_idx]
-           
+
     #----------------------------------------------#
     #   如果重合程度小于threhold则认为是背景
     #----------------------------------------------#
-    conf[best_truth_overlap < threshold] = 0    
+    conf[best_truth_overlap < threshold] = 0
     #----------------------------------------------#
     #   利用真实框和先验框进行编码
     #   编码后的结果就是网络应该有的预测结果
@@ -307,7 +305,6 @@ def weights_init(net, init_type='normal', init_gain=0.02):
             torch.nn.init.constant_(m.bias.data, 0.0)
     print('initialize network with %s type' % init_type)
     net.apply(init_func)
-
 def get_lr_scheduler(lr_decay_type, lr, min_lr, total_iters, warmup_iters_ratio = 0.1, warmup_lr_ratio = 0.1, no_aug_iter_ratio = 0.3, step_num = 10):
     def yolox_warm_cos_lr(lr, min_lr, total_iters, warmup_total_iters, warmup_lr_start, no_aug_iter, iters):
         if iters <= warmup_total_iters:

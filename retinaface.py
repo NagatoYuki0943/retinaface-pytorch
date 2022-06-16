@@ -1,3 +1,7 @@
+"""
+model_path ,classes_path, input_shape, confidence, nms_iou
+"""
+
 import time
 
 import cv2
@@ -34,7 +38,7 @@ class Retinaface(object):
         #---------------------------------------------------------------------#
         "confidence"        : 0.5,
         #---------------------------------------------------------------------#
-        #   非极大抑制所用到的nms_iou大小
+        #   非极大抑制所用到的nms_iou大小,越小代表越严格
         #---------------------------------------------------------------------#
         "nms_iou"           : 0.45,
         #---------------------------------------------------------------------#
@@ -68,7 +72,7 @@ class Retinaface(object):
         self.__dict__.update(self._defaults)
         for name, value in kwargs.items():
             setattr(self, name, value)
-            
+
         #---------------------------------------------------#
         #   不同主干网络的config信息
         #---------------------------------------------------#
@@ -120,6 +124,8 @@ class Retinaface(object):
         im_height, im_width, _ = np.shape(image)
         #---------------------------------------------------#
         #   计算scale，用于将获得的预测框转换成原图的高宽
+        #   将小数形式转换为图片大小
+        #   长度分别为4和10,这样可以直接乘以预测结果即可
         #---------------------------------------------------#
         scale = [
             np.shape(image)[1], np.shape(image)[0], np.shape(image)[1], np.shape(image)[0]
@@ -137,7 +143,7 @@ class Retinaface(object):
             image = letterbox_image(image, [self.input_shape[1], self.input_shape[0]])
         else:
             self.anchors = Anchors(self.cfg, image_size=(im_height, im_width)).get_anchors()
-            
+
         with torch.no_grad():
             #-----------------------------------------------------------#
             #   图片预处理，归一化。
@@ -150,28 +156,39 @@ class Retinaface(object):
 
             #---------------------------------------------------------#
             #   传入网络进行预测
+            #   return: 框的调整参数,是否包含人脸,5个坐标点的调整参数
             #---------------------------------------------------------#
             loc, conf, landms = self.net(image)
-            
             #-----------------------------------------------------------#
-            #   对预测框进行解码
+            #   将预测结果进行解码和非极大抑制
+            #   return: [b, 4] 4指的是x1,y1,x2,y2
             #-----------------------------------------------------------#
             boxes   = decode(loc.data.squeeze(0), self.anchors, self.cfg['variance'])
             #-----------------------------------------------------------#
             #   获得预测结果的置信度
             #-----------------------------------------------------------#
-            conf    = conf.data.squeeze(0)[:, 1:2]
+            conf    = conf.data.squeeze(0)[:, 1:2]  # [0] 是背景 [1]是人脸的概率 1:2取出1
             #-----------------------------------------------------------#
             #   对人脸关键点进行解码
+            #   return: 5个坐标点 [b,10]
             #-----------------------------------------------------------#
             landms  = decode_landm(landms.data.squeeze(0), self.anchors, self.cfg['variance'])
 
             #-----------------------------------------------------------#
             #   对人脸识别结果进行堆叠
+            #   [0,1,2,3] 坐标
+            #   [4] 置信度
+            #   [5-14] 5个关键点坐标
             #-----------------------------------------------------------#
             boxes_conf_landms = torch.cat([boxes, conf, landms], -1)
+            #-----------------------------------------------------------#
+            #   非极大抑制
+            #-----------------------------------------------------------#
             boxes_conf_landms = non_max_suppression(boxes_conf_landms, self.confidence)
 
+            #---------------------------------------------------#
+            #   如果没有预测框则返回原图
+            #---------------------------------------------------#
             if len(boxes_conf_landms) <= 0:
                 return old_image
 
@@ -181,7 +198,10 @@ class Retinaface(object):
             if self.letterbox_image:
                 boxes_conf_landms = retinaface_correct_boxes(boxes_conf_landms, \
                     np.array([self.input_shape[0], self.input_shape[1]]), np.array([im_height, im_width]))
-            
+
+        #---------------------------------------------------------#
+        #   坐标和关键点参数的预测值为0~1,转换为真实大小
+        #---------------------------------------------------------#
         boxes_conf_landms[:, :4] = boxes_conf_landms[:, :4] * scale
         boxes_conf_landms[:, 5:] = boxes_conf_landms[:, 5:] * scale_for_landmarks
 
@@ -201,9 +221,9 @@ class Retinaface(object):
             #---------------------------------------------------#
             #   b[5]-b[14]为人脸关键点的坐标
             #---------------------------------------------------#
-            cv2.circle(old_image, (b[5], b[6]), 1, (0, 0, 255), 4)
-            cv2.circle(old_image, (b[7], b[8]), 1, (0, 255, 255), 4)
-            cv2.circle(old_image, (b[9], b[10]), 1, (255, 0, 255), 4)
+            cv2.circle(old_image, (b[5],  b[6]),  1, (0, 0, 255), 4)
+            cv2.circle(old_image, (b[7],  b[8]),  1, (0,255,255), 4)
+            cv2.circle(old_image, (b[9],  b[10]), 1, (255,0,255), 4)
             cv2.circle(old_image, (b[11], b[12]), 1, (0, 255, 0), 4)
             cv2.circle(old_image, (b[13], b[14]), 1, (255, 0, 0), 4)
         return old_image

@@ -1,6 +1,7 @@
-#-------------------------------------#
-#       对数据集进行训练
-#-------------------------------------#
+"""
+training_dataset_path, backbone, pretrained, model_path
+"""
+
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
@@ -25,6 +26,7 @@ if __name__ == "__main__":
     Cuda = True
     #--------------------------------#
     #   获得训练用的人脸标签与坐标
+    #   图片名字和关键点信息
     #--------------------------------#
     training_dataset_path = 'data/widerface/train/label.txt'
     #-------------------------------#
@@ -45,22 +47,22 @@ if __name__ == "__main__":
     #
     #   如果训练过程中存在中断训练的操作，可以将model_path设置成logs文件夹下的权值文件，将已经训练了一部分的权值再次载入。
     #   同时修改下方的 冻结阶段 或者 解冻阶段 的参数，来保证模型epoch的连续性。
-    #   
+    #
     #   当model_path = ''的时候不加载整个模型的权值。
     #
     #   此处使用的是整个模型的权重，因此是在train.py进行加载的，pretrain不影响此处的权值加载。
     #   如果想要让模型从主干的预训练权值开始训练，则设置model_path = ''，pretrain = True，此时仅加载主干。
     #   如果想要让模型从0开始训练，则设置model_path = ''，pretrain = Fasle，Freeze_Train = Fasle，此时从0开始训练，且没有冻结主干的过程。
-    #   
+    #
     #   一般来讲，网络从0开始的训练效果会很差，因为权值太过随机，特征提取效果不明显，因此非常、非常、非常不建议大家从0开始训练！
     #   如果一定要从0开始，可以了解imagenet数据集，首先训练分类模型，获得网络的主干部分权值，分类模型的 主干部分 和该模型通用，基于此进行训练。
     #----------------------------------------------------------------------------------------------------------------------------#
     model_path  = ""
-    
+
     #----------------------------------------------------------------------------------------------------------------------------#
     #   训练分为两个阶段，分别是冻结阶段和解冻阶段。设置冻结阶段是为了满足机器性能不足的同学的训练需求。
     #   冻结训练需要的显存较小，显卡非常差的情况下，可设置Freeze_Epoch等于UnFreeze_Epoch，此时仅仅进行冻结训练。
-    #      
+    #
     #   在此提供若干参数设置建议，各位训练者根据自己的需求进行灵活调整：
     #   （一）从主干网络的预训练权重开始训练：
     #       Adam：
@@ -77,6 +79,7 @@ if __name__ == "__main__":
     #       受到BatchNorm层影响，batch_size最小为2，不能为1。
     #       正常情况下Freeze_batch_size建议为Unfreeze_batch_size的1-2倍。不建议设置的差距过大，因为关系到学习率的自动调整。
     #----------------------------------------------------------------------------------------------------------------------------#
+
     #------------------------------------------------------------------#
     #   冻结阶段训练参数
     #   此时模型的主干被冻结了，特征提取网络不发生改变
@@ -141,17 +144,16 @@ if __name__ == "__main__":
     #------------------------------------------------------------------#
     #   save_dir        权值与日志文件保存的文件夹
     #------------------------------------------------------------------#
-    save_dir            = 'logs'
-    #-------------------------------------------------------------------#
+    save_dir            = 'logs'    #-------------------------------------------------------------------#
     #   用于设置是否使用多线程读取数据，0代表关闭多线程
     #   开启后会加快数据读取速度，但是会占用更多内存
     #   在IO为瓶颈的时候再开启多线程，即GPU运算速度远大于读取图片的速度。
     #-------------------------------------------------------------------#
-    num_workers         = 4
+    num_workers = 4
 
     if backbone == "mobilenet":
         cfg = cfg_mnet
-    elif backbone == "resnet50":  
+    elif backbone == "resnet50":
         cfg = cfg_re50
     else:
         raise ValueError('Unsupported backbone - `{}`, Use mobilenet, resnet50.'.format(backbone))
@@ -170,7 +172,6 @@ if __name__ == "__main__":
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if np.shape(model_dict[k]) == np.shape(v)}
         model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict)
-        
     loss_history    = LossHistory(save_dir, model, input_shape=(cfg['train_image_size'], cfg['train_image_size']))
     criterion       = MultiBoxLoss(2, 0.35, 7, cfg['variance'], Cuda)
 
@@ -187,6 +188,18 @@ if __name__ == "__main__":
     if Cuda:
         anchors = anchors.cuda()
 
+
+    #---------------------------------------------------------#
+    #   训练分为两个阶段，分别是冻结阶段和解冻阶段。
+    #   显存不足与数据集大小无关，提示显存不足请调小batch_size。
+    #   受到BatchNorm层影响，batch_size最小为2，不能为1。
+    #---------------------------------------------------------#
+    #---------------------------------------------------------#
+    #   Init_Epoch为起始世代
+    #   Freeze_Epoch为冻结训练的世代
+    #   Epoch总训练世代
+    #   提示OOM或者显存不足请调小Batch_size
+    #---------------------------------------------------------#
     #------------------------------------------------------#
     #   主干特征提取网络特征通用，冻结训练可以加快训练速度
     #   也可以在训练初期防止权值被破坏。
@@ -283,5 +296,6 @@ if __name__ == "__main__":
                 
             set_optimizer_lr(optimizer, lr_scheduler_func, epoch)
             fit_one_epoch(model_train, model, loss_history, optimizer, criterion, epoch, epoch_step, gen, UnFreeze_Epoch, anchors, cfg, Cuda, save_period, save_dir)
+
 
         loss_history.writer.close()
